@@ -10,6 +10,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { isNativeRuntime } from '../vm/runtime-kind.mjs'
 import { atomicWriteJson } from '../vm/vm-file.mjs'
 import { isManualScheduleLocked } from '../pool/schedule-policy.mjs'
 import {
@@ -233,6 +234,7 @@ function slotIndexFromText(value) {
 
 /** Container --user. Non-numeric ids share index 1, matching socksUidFor. */
 export function slotRuntimeOwner(vm) {
+  if (isNativeRuntime(vm)) return { uid: process.getuid?.(), gid: process.getgid?.() }
   const n = slotIndexFromText(vm?.id) || slotIndexFromText(vm?.name) || 1
   const base = Number(process.env.KIN_VM_UID_BASE || 10000)
   const gid = Number(process.env.KIN_VM_GID || 987)
@@ -280,6 +282,10 @@ export function slotUidGidFromHomeDir(homeDir) {
     .replace(/\\/g, '/')
     .match(/\/([^/]+)\/cli-home\/?$/i)?.[1]
   if (!id) return null
+  try {
+    const record = JSON.parse(fs.readFileSync(path.resolve(homeDir, '..', '..', `${id}.json`), 'utf8'))
+    if (isNativeRuntime(record)) return slotRuntimeOwner(record)
+  } catch {}
   return slotRuntimeOwner({ id })
 }
 

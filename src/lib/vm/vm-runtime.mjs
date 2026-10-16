@@ -7,6 +7,8 @@
 import { execFileSync } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { isNativeRuntime } from './runtime-kind.mjs'
+import { nativePaths } from './native-runtime.mjs'
 import path from 'node:path'
 import { maxRequestBytes, readRoutingConfigFile, streamIdleTimeoutMs } from '../core/config.mjs'
 import { US_TIMEZONES, validTimezone } from '../core/timezone.mjs'
@@ -356,7 +358,7 @@ export function syncWorkerTelemetry(vm, projectRoot) {
     return { wrote: false }
   }
   if (!doc || typeof doc !== 'object') return { wrote: false }
-  doc.telemetry = buildWorkerTelemetry(vm, projectRoot)
+  doc.telemetry = isNativeRuntime(vm) ? { enabled: false } : buildWorkerTelemetry(vm, projectRoot)
   replaceSlotOwnedFile(paths.config, JSON.stringify(doc, null, 2) + '\n', vm)
   return { wrote: true, enabled: doc.telemetry.enabled === true }
 }
@@ -493,10 +495,12 @@ function resolveSlotRouting(projectRoot, routing) {
 }
 
 export function writeWorkerFiles(vm, projectRoot, { transparent, routing } = {}) {
+  const native = isNativeRuntime(vm)
+  const nativePath = native ? nativePaths(projectRoot, vm.id) : null
   assertProxyAllowed(vm.proxy)
   const paths = workerPaths(projectRoot, vm.id)
-  const uid = runtimeUidNum(vm)
-  const gid = Number(GID)
+  const uid = native ? process.getuid() : runtimeUidNum(vm)
+  const gid = native ? process.getgid() : Number(GID)
   fs.mkdirSync(paths.runDir, { recursive: true, mode: 0o700 })
   let token = ''
   try {
@@ -504,8 +508,8 @@ export function writeWorkerFiles(vm, projectRoot, { transparent, routing } = {})
   } catch {}
   if (!token) token = crypto.randomBytes(32).toString('hex')
   replaceSlotOwnedFile(paths.token, token + '\n', vm)
-  const wantNet = String(slotNetworkForVm(vm) || '')
-  const liveNet = String(inspectContainer(containerName(vm.id))?.networkMode || '')
+  const wantNet = native ? '' : String(slotNetworkForVm(vm) || '')
+  const liveNet = native ? '' : String(inspectContainer(containerName(vm.id))?.networkMode || '')
   const onEgress =
     transparent === true || (transparent !== false && (wantNet.startsWith('kin-eg-') || liveNet.startsWith('kin-eg-')))
   const local = isLocalEgressProxy(vm.proxy)
@@ -515,8 +519,8 @@ export function writeWorkerFiles(vm, projectRoot, { transparent, routing } = {})
   const resolvedRouting = resolveSlotRouting(projectRoot, routing)
   const workerConfig = {
     vm_id: vm.id,
-    socket_path: '/run/kin/worker.sock',
-    credential_path: '/home/kincli/.claude/credentials.json',
+    socket_path: native ? path.join(nativePath.run, 'worker.sock') : '/run/kin/worker.sock',
+    credential_path: native ? nativePath.credential : '/home/kincli/.claude/credentials.json',
     proxy_url: proxyUrl,
     proxy_required: onEgress || local ? false : vm.proxy_required !== false,
     internal_token: token,
@@ -530,7 +534,7 @@ export function writeWorkerFiles(vm, projectRoot, { transparent, routing } = {})
     max_event_bytes: 32 * 1024 * 1024,
     test_endpoints: testEndpoints,
     runtime_kind: runtimeKind(vm),
-    telemetry: buildWorkerTelemetry(vm, projectRoot),
+    telemetry: native ? { enabled: false } : buildWorkerTelemetry(vm, projectRoot),
   }
   if (onEgress || local) workerConfig.egress_mode = 'transparent'
   if (testEndpoints) {

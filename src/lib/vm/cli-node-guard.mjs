@@ -12,7 +12,7 @@
 import { execDetached } from '../cluster/docker-remote.mjs'
 import { slotContainerName } from '../transport/rust-kernel-supervisor.mjs'
 import { isCodexVm } from './vm-kind.mjs'
-import { isKvmRuntime } from './runtime-kind.mjs'
+import { isKvmRuntime, isNativeRuntime } from './runtime-kind.mjs'
 import { slotExecCmd } from './slot-exec.mjs'
 import { slotHost } from './slot-host.mjs'
 
@@ -23,7 +23,7 @@ export const CLI_NODE_GUARD_INTERVAL_MS = 15_000
 const HARD_DOWN = new Set(['stopped', 'dead', 'error', 'disabled'])
 
 export function isCliNodeGuardTarget(vm) {
-  if (!vm?.id || isCodexVm(vm)) return false
+  if (!vm?.id || isCodexVm(vm) || isNativeRuntime(vm)) return false
   return !HARD_DOWN.has(String(vm.status || '').toLowerCase())
 }
 

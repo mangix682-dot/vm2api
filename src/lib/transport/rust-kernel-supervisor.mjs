@@ -18,7 +18,8 @@ import { OFFICIAL_CLI_VERSION } from '../identity/vm-identity.mjs'
 import { cacheTtlFromRouting, normalizeCacheTtl } from '../protocol/cache-ttl.mjs'
 import { setVmSchedulable, listVms, getVm } from '../vm/vm-registry.mjs'
 import { isCodexVm } from '../vm/vm-kind.mjs'
-import { isKvmRuntime, runtimeKind } from '../vm/runtime-kind.mjs'
+import { isKvmRuntime, isNativeRuntime, runtimeKind } from '../vm/runtime-kind.mjs'
+import { nativeProjectRoot, startNativeSlot, stopNativeSlot } from '../vm/native-runtime.mjs'
 import { slotExecArgv } from '../vm/slot-exec.mjs'
 import {
   CONTAINER_CLI_NODE_BIN,
@@ -140,6 +141,7 @@ export async function reconcileCliHopRuntime(exec, { runDockerExec = runDocker }
 }
 
 export function stopRustKernel(exec = {}) {
+  if (isNativeRuntime(exec.vm)) return stopNativeSlot(exec.vm)
   const container = slotContainerName(exec)
   if (!container) return { ok: false, reason: 'container_missing' }
   const env = slotHost(exec?.vm).dockerEnv()
@@ -251,6 +253,8 @@ async function waitForHealthOrExit(exec, { timeoutMs, container, runDockerExec, 
 }
 
 export async function ensureRustKernel(exec, { timeoutMs = 30000, runDockerExec = runDocker, force = false } = {}) {
+  if (isNativeRuntime(exec?.vm))
+    return startNativeSlot(exec.vm, nativeProjectRoot(exec.vm, exec.homeDir), { timeoutMs, force })
   const vmId = exec?.vmId || exec?.vm?.id || 'unknown'
   const pending = starts.get(vmId)
   if (pending && !force) return pending.promise
@@ -317,6 +321,7 @@ export function wrapNewerThanKernel(exec) {
 }
 
 export async function restartRustKernel(exec, { timeoutMs = 30000, runDockerExec = runDocker } = {}) {
+  if (isNativeRuntime(exec?.vm)) return ensureRustKernel(exec, { timeoutMs, force: true })
   const run = slotRunner(exec, runDockerExec)
   await killWrapDataplane(exec, run)
   const paths = rustKernelPaths(exec)
@@ -695,8 +700,9 @@ export function writeKernelConfig(
   const kind = runtimeKind(record)
   const config = {
     vm_id: vm.id,
-    socket_path: kind === 'kvm' ? '/run/kin-guest/kernel.sock' : '/run/kin/kernel.sock',
-    credential_path: '/home/kincli/.claude/credentials.json',
+    socket_path:
+      kind === 'native' ? socketPath : kind === 'kvm' ? '/run/kin-guest/kernel.sock' : '/run/kin/kernel.sock',
+    credential_path: kind === 'native' ? credentialPath : '/home/kincli/.claude/credentials.json',
     proxy_url: '',
     proxy_required: false,
     internal_token: secret,

@@ -1,0 +1,22 @@
+[Unit]
+Description=vm2api single-account native wrap gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dev
+Group=dev
+WorkingDirectory=/home/dev/vm2api
+EnvironmentFile=/home/dev/vm2api/.env.native
+ExecStart=/usr/local/bin/node src/server.mjs
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

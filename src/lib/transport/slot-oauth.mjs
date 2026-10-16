@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
+import { isNativeRuntime } from '../vm/runtime-kind.mjs'
+import { runNativeOauth } from '../vm/native-runtime.mjs'
 import { slotHost } from '../vm/slot-host.mjs'
 import { slotExecArgv } from '../vm/slot-exec.mjs'
 
@@ -99,7 +101,9 @@ export async function runSlotOauth(
   const host = slotHost(exec?.vm)
   const vm = { ...(exec?.vm || {}), id: exec?.vmId || exec?.vm?.id }
   const user = host.execUser(vm)
-  const argv = slotExecArgv(vm, [WORKER_BIN, 'oauth', op, '--config', WORKER_CONFIG], { interactive: true, user })
+  const argv = isNativeRuntime(vm)
+    ? []
+    : slotExecArgv(vm, [WORKER_BIN, 'oauth', op, '--config', WORKER_CONFIG], { interactive: true, user })
   if (force) argv.push('--force')
 
   const stdin =
@@ -110,7 +114,9 @@ export async function runSlotOauth(
         : ''
   let result
   try {
-    result = await runDocker(argv, { stdin, timeoutMs, env: host.dockerEnv() })
+    result = isNativeRuntime(vm)
+      ? await runNativeOauth(exec, op, { stdin, timeoutMs, force })
+      : await runDocker(argv, { stdin, timeoutMs, env: host.dockerEnv() })
   } catch (error) {
     return failure('worker_exec_failed', String(error?.message || error).slice(0, 300))
   }

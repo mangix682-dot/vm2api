@@ -4,7 +4,7 @@
  * per-attempt candidate from the scheduled VM record: paths, OAuth snapshot,
  * proxy, quota account.
  *
- * Runtime: one Docker container + one long-lived Go slot worker per VM.
+ * Runtime: a slot kernel, hosted by a container, KVM guest or native service.
  */
 import path from 'node:path'
 import { boundProxyUrl, hasBoundExit, isLocalEgressProxy } from './egress.mjs'
@@ -12,9 +12,9 @@ import { getVm, listVms, getActiveVmId, isVmScheduleReady } from './vm-registry.
 import { proxyBlockedReason } from './proxy-policy.mjs'
 
 export const GATEWAY_CAPABILITIES = {
-  runtime: 'docker-container',
-  kernel: 'mixed-os-docker',
-  worker: 'go-slot-worker',
+  runtime: process.env.VM2API_NATIVE_SLOT === '1' ? 'native-process' : 'docker-container',
+  kernel: process.env.VM2API_NATIVE_SLOT === '1' ? 'linux-host' : 'mixed-os-docker',
+  worker: process.env.VM2API_NATIVE_SLOT === '1' ? 'rust-wrap' : 'go-slot-worker',
   client_tools: true,
   images: true,
   multi_turn_native: true,

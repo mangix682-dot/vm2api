@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { runtimeKind } from './runtime-kind.mjs'
+import { runtimeKind, isNativeRuntime } from './runtime-kind.mjs'
+import { readNativeIdentity } from './native-runtime.mjs'
 import { slotHost } from './slot-host.mjs'
 import { slotExecArgv } from './slot-exec.mjs'
 
@@ -23,12 +24,14 @@ export async function readGuestIdentity(exec, _requestPath, { timeoutMs = 5000, 
   const vm = { ...(exec.vm || {}), id: exec.vmId || exec.vm?.id }
   try {
     const env = slotHost(exec.vm).dockerEnv()
-    const { stdout } = await run('docker', slotExecArgv(vm, ['sh', '-c', READ_IDENTITY]), {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      maxBuffer: 64 * 1024,
-      ...(env ? { env } : {}),
-    })
+    const { stdout } = isNativeRuntime(vm)
+      ? await readNativeIdentity(exec)
+      : await run('docker', slotExecArgv(vm, ['sh', '-c', READ_IDENTITY]), {
+          encoding: 'utf8',
+          timeout: timeoutMs,
+          maxBuffer: 64 * 1024,
+          ...(env ? { env } : {}),
+        })
     const fields = stdout.split('\0')
     if (fields.length !== 9 || fields[8] !== '' || !fields[0] || !fields[3] || !fields[4]) {
       return fail('guest_identity_invalid', 'Guest returned incomplete identity data')

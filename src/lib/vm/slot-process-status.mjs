@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { slotContainerName } from '../transport/rust-kernel-supervisor.mjs'
 import { slotHost } from './slot-host.mjs'
 import { runtimeKind } from './runtime-kind.mjs'
+import { nativeProcessStatus } from './native-runtime.mjs'
 import { slotExecArgv } from './slot-exec.mjs'
 
 const exec = promisify(execFile)
@@ -47,6 +48,19 @@ export async function readSlotProcessStatus({ projectRoot, vm, run = exec, timeo
     // Missing or unreadable config is unknown, never equivalent to disabled.
   }
   const kind = runtimeKind(vm)
+  if (kind === 'native') {
+    const state = nativeProcessStatus(vm)
+    return {
+      telemetry: { enabled: false, running: false },
+      process_topology: {
+        rust_pid1: false,
+        go_worker_pid1: false,
+        go_telemetry: false,
+        native_kernel_running: state.running,
+        native_kernel_pid: state.pid,
+      },
+    }
+  }
   if (kind !== 'docker' && kind !== 'kvm') return { ...unknown, telemetry: { enabled, running: null } }
   try {
     const env = slotHost(vm).dockerEnv()

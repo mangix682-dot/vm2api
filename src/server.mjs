@@ -92,6 +92,7 @@ import {
 import { normalizeCredentialMode } from './lib/oauth/credential-mode.mjs'
 import { ensureWorkerCredential } from './lib/transport/go-worker-client.mjs'
 import { stopAllRustKernels } from './lib/transport/rust-kernel-supervisor.mjs'
+import { stopAllNativeSlots } from './lib/vm/native-runtime.mjs'
 import { createRespond, parseRequestUrl } from './lib/http/respond.mjs'
 import { isConsoleEntry, tryServeWebDist } from './lib/http/web-dist.mjs'
 import { createRoutingRuntime } from './lib/admin/routing-runtime.mjs'
@@ -366,7 +367,10 @@ proxyPool = new ProxyPool({
     setVmSchedulable(cfg.paths.project, vmId, true)
   },
   egressCheck: (proxy) => proxyEgressReady(proxy, cfg.paths.project),
-  repairEgress: (proxy) => ensureProxyEgress(cfg.paths.project, proxy),
+  repairEgress: (proxy) =>
+    process.env.VM2API_NATIVE_SLOT === '1'
+      ? Promise.resolve({ ok: true, direct: true })
+      : ensureProxyEgress(cfg.paths.project, proxy),
 })
 proxyPool.startScheduler()
 
@@ -375,7 +379,8 @@ try {
   if (!proxyPool.snapshot().proxies?.length) {
     const seeded = proxyPool.ensureLocal()
     if (seeded.created) {
-      ensureProxyEgress(cfg.paths.project, proxyPool.getProxyByIdWithAuth(seeded.proxy.id))
+      if (process.env.VM2API_NATIVE_SLOT !== '1')
+        ensureProxyEgress(cfg.paths.project, proxyPool.getProxyByIdWithAuth(seeded.proxy.id))
       console.log('[bootstrap] seeded local egress px-local')
     }
   }
@@ -1187,7 +1192,7 @@ process.on('unhandledRejection', (e) => console.error('[unhandled]', e))
 
 // Graceful shutdown: stop schedulers/watchers, close the DB (WAL checkpoint).
 let _shuttingDown = false
-function shutdown(signal) {
+async function shutdown(signal) {
   if (_shuttingDown) return
   _shuttingDown = true
   console.log(`[shutdown] ${signal} — closing`)
@@ -1234,6 +1239,7 @@ function shutdown(signal) {
   try {
     closeDatabase()
   } catch {}
+  await stopAllNativeSlots()
   process.exit(0)
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'))

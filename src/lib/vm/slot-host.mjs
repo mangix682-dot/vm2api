@@ -62,7 +62,8 @@ import {
 } from './egress.mjs'
 import { isCodexVm } from './vm-kind.mjs'
 import { nodeEgressProxyUrl } from '../cluster/node-egress-socks.mjs'
-import { isKvmRuntime } from './runtime-kind.mjs'
+import { isKvmRuntime, isNativeRuntime } from './runtime-kind.mjs'
+import { nativePaths, nativeProjectRoot, startNativeSlot, stopNativeSlot } from './native-runtime.mjs'
 import { stopCodexKernel } from '../transport/codex-kernel-supervisor.mjs'
 
 const noop = async () => ({ skipped: true })
@@ -147,6 +148,25 @@ function nodeHost(nodeId) {
 }
 
 export function slotHost(vm) {
+  if (isNativeRuntime(vm)) {
+    const p = nativePaths(nativeProjectRoot(vm), vm.id)
+    return {
+      ...LOCAL_HOST,
+      kind: 'native',
+      bins: { cli: p.cli, cc: '' },
+      supports: (cap) => cap === 'wrap_cli' || cap === 'auth_scheme',
+      dockerApi: () => {
+        throw new Error('Docker is unavailable for a native slot')
+      },
+      execUser: () => `${process.getuid?.()}:${process.getgid?.()}`,
+      start: (record, root, opts) => startNativeSlot(record, root, opts),
+      reload: (record, root, opts) => startNativeSlot(record, root, { ...opts, force: true }),
+      stop: stopNativeSlot,
+      destroy: stopNativeSlot,
+      setProxyEgressEnabled: async () => ({ ok: true, direct: true }),
+      localExitProxyUrl: () => '',
+    }
+  }
   const nodeId = vmNodeId(vm)
   const base = nodeId ? nodeHost(nodeId) : LOCAL_HOST
   if (!isKvmRuntime(vm)) return base

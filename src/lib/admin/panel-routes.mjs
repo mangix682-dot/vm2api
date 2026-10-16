@@ -1123,6 +1123,26 @@ export function createPanelHandler(ctx) {
           }).body,
         )
       }
+      // Native deployments provision one slot offline. Image/update/placement
+      // operations still assume containers and must never run on this backend.
+      if (
+        process.env.VM2API_NATIVE_SLOT === '1' &&
+        req.method !== 'GET' &&
+        (p === '/api/panel/vms' ||
+          /^\/api\/panel\/vms\/(create|import|package)(\/|$)/.test(p) ||
+          /^\/api\/panel\/vms\/[^/]+\/(reset|reset-fingerprint|reconcile-fingerprint|computer|migrate|placement|proxy|dataplane)(\/|$)/.test(
+            p,
+          ) ||
+          /^\/api\/panel\/(proxies|nodes|release|updates)(\/|$)/.test(p))
+      ) {
+        return json(res, 409, {
+          ok: false,
+          error: {
+            code: 'native_unsupported',
+            message: '本机单账号部署使用 scripts/native-slot.mjs 初始化；不支持容器、集群与出口切换操作',
+          },
+        })
+      }
       if (
         denyIfUserMissesVm(req, res, {
           projectRoot: cfg.paths.project,

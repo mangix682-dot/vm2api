@@ -14,7 +14,7 @@ import { execDetached, inspectExec, openExecTty, resizeExec } from '../cluster/d
 import { slotContainerName } from '../transport/rust-kernel-supervisor.mjs'
 import { slotHost } from './slot-host.mjs'
 import { isCodexVm } from './vm-kind.mjs'
-import { isKvmRuntime } from './runtime-kind.mjs'
+import { isKvmRuntime, isNativeRuntime } from './runtime-kind.mjs'
 import { slotExecCmd } from './slot-exec.mjs'
 import { getVm } from './vm-registry.mjs'
 import { OFFICIAL_CLI_VERSION } from '../identity/vm-identity.mjs'
@@ -87,6 +87,7 @@ export function createSlotShell({ projectRoot, logger = console }) {
   function issueTicket(vmId) {
     const vm = getVm(projectRoot, vmId)
     if (!vm) return refuse(404, 'vm_not_found', 'vm not found')
+    if (isNativeRuntime(vm)) return refuse(409, 'native_unsupported', '本机槽位请使用 SSH 终端')
     if (isCodexVm(vm)) return refuse(409, 'no_container', 'GPT 槽没有容器，无法打开终端')
     if (sessions >= MAX_SESSIONS) return refuse(429, 'shell_limit', `终端会话已达上限 ${MAX_SESSIONS}`)
     const now = Date.now()
@@ -120,7 +121,7 @@ export function createSlotShell({ projectRoot, logger = console }) {
       return true
     }
     const vm = getVm(projectRoot, vmId)
-    if (!vm || isCodexVm(vm)) {
+    if (!vm || isCodexVm(vm) || isNativeRuntime(vm)) {
       rejectUpgrade(socket, 404, 'Not Found')
       return true
     }

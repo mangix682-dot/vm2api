@@ -9,6 +9,8 @@
  * operator power cycle holds the watchdog off the VM and then resets its budget.
  */
 import { clusterManager, vmNodeId } from '../cluster/placement.mjs'
+import { isNativeRuntime } from './runtime-kind.mjs'
+import { nativeProcessStatus } from './native-runtime.mjs'
 import { containerLogs, inspectContainerOrNull } from '../cluster/docker-remote.mjs'
 import { slotEgressNames } from '../cluster/remote-slot.mjs'
 import { kernelFaults, rustKernelHealth, toPublicKernelHealth } from '../transport/rust-kernel-client.mjs'
@@ -87,6 +89,7 @@ function logTail(logs) {
  * A down container carries its last log lines, which usually name the cause.
  */
 export async function inspectSlotContainer(vm) {
+  if (isNativeRuntime(vm)) return nativeProcessStatus(vm)
   const connect = slotHost(vm).dockerApi()
   const name = slotExecContainer(vm)
   const info = await inspectContainerOrNull(connect, name)
