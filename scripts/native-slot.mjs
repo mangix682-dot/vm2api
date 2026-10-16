@@ -14,6 +14,7 @@ import {
   readWorkerCredentialFile,
   writeWorkerCredentialFile,
 } from '../src/lib/oauth/oauth-credentials.mjs'
+import { looksLikeOfficialSetupToken, officialSetupTokenToOauth } from '../src/lib/oauth/claude-setup-token.mjs'
 
 const root = path.resolve(process.env.KIN_PROJECT_ROOT || fileURLToPath(new URL('..', import.meta.url)))
 const p = nativePaths(root, 'vm-001')
@@ -66,10 +67,23 @@ try {
       throw new Error(
         'Usage: node scripts/native-slot.mjs init; node scripts/native-slot.mjs import /path/to/credentials.json',
       )
-    const document = JSON.parse(fs.readFileSync(path.resolve(input), 'utf8'))
-    const credential = document.claudeAiOauth || document
+    const raw = fs.readFileSync(path.resolve(input), 'utf8').trim()
+    let credential
+    try {
+      const document = JSON.parse(raw)
+      credential = document.claudeAiOauth || document
+    } catch {
+      credential = raw
+    }
+    if (typeof credential === 'string') {
+      if (!looksLikeOfficialSetupToken(credential)) throw new Error('Expected sk-ant-oat01-... official Setup Token')
+      credential = officialSetupTokenToOauth(credential)
+    }
     const n = normalizeOauth(credential)
-    if (!n.access_token || !n.refresh_token) throw new Error('Expected subscription OAuth accessToken and refreshToken')
+    const official = looksLikeOfficialSetupToken(n.access_token) && !n.refresh_token
+    if (!official && (!n.access_token || !n.refresh_token)) {
+      throw new Error('Expected subscription OAuth accessToken and refreshToken, or an official sk-ant-oat01-... Setup Token')
+    }
     writeWorkerCredentialFile(p.home, credential)
     vm = persistOauthToVm(recordPath, credential, { acceptLiveGrant: true })
     vm.schedulable = true
